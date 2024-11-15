@@ -9,4 +9,5 @@ The notebook code requires the following libraries:
 - statsmodels
 - plotly
 - seaborn
+- kaleidoscope (for saving the choropleth image as a file)
 - dataframe-image (for saving formatted Pandas dataframes as images)
