@@ -5,7 +5,7 @@ This repo is used for developing data/visualizations for use in the first projec
 The notebook code requires the following libraries:
 - pandas
 - numpy
-- scitkit-learn
+- scikit-learn
 - statsmodels
 - plotly
 - seaborn
