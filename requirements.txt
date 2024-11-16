@@ -1,0 +1,15 @@
+# from the venv you'd like to run the following command to ensure the notebook can run:
+# pip install -r requirements.txt
+
+pandas
+numpy
+statsmodels
+scikit-learn
+plotly
+seaborn
+matplotlib
+dataframe-image
+kaleido==0.2.1
+jupyterlab
+nbstripout
+ipykernel
