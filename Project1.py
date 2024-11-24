@@ -7,6 +7,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score
 from sklearn.neighbors import KNeighborsClassifier
 
+
 def get_columns_and_types(df):
     """
     Loop over the dtypes of the columns of a dataframe, and return a dictionary of lists identifying which are ints, floats and objects.
@@ -35,7 +36,7 @@ def convert_dollars_to_float(s, pattern=r"\$|,"):
         return s
 
 
-def estimate_y_from_X(data, y_label, X_labels, train_size=0.6, random_state=42, add_constant=False):
+def estimate_y_from_X_ols(data, y_label, X_labels, train_size=0.6, random_state=42, add_constant=False):
     """
     Run a linear regression on data using y_label as the dependent variable and X_labels as the independent variable(s): y_label ~ X_labels
     A constant can be optionally added, but note that the r2 test may give misleading results when a constant is included.
@@ -88,6 +89,7 @@ def convert_percentages_to_float(s):
     else:
         return s
 
+
 def convert_string_date_to_dt(s):
     """
     Take in a value, and if it is a string that looks like a date in YYYY-MM-DD format, convert it to a datetime object.
@@ -125,7 +127,7 @@ def get_cleaned_zipcodes(data):
     return data
     
 
-def classify_y_based_on_X(data, y_label, X_labels, train_size=0.6, random_state=42):
+def classify_y_based_on_X_knn(data, y_label, X_labels, train_size=0.6, random_state=42):
     """
     Wrapped for a K nearest neighbor classifier, that will estimate categories contained in y_label column of data, 
     using the variables contained in X labels columns of data.
