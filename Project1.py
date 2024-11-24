@@ -10,6 +10,7 @@ from sklearn.neighbors import KNeighborsClassifier
 import plotly.express as px
 import plotly.io as pio
 
+day_map = {0: 'Mon', 1: 'Tues', 2: 'Wed', 3: 'Thurs', 4: 'Fri', 5: 'Sat', 6: 'Sun'}
 
 def add_seasonality_features(df, date_col='date', day_map={0: 'Mon', 1: 'Tues', 2: 'Wed', 3: 'Thurs', 4: 'Fri', 5: 'Sat', 6: 'Sun'}):
     """ Add categorical seasonality info """
@@ -104,6 +105,13 @@ def load_and_process_raw_data():
         data=get_cleaned_zipcodes(boston_listings), 
         y_label='zipcode_cleaned', X_labels=['latitude', 'longitude'],
     )['filled_data']    
+
+    # convert price column to a float, assuming format of $#.#
+    boston_calendar.price = [float(i.replace('$', '').replace(',', '')) if type(i) is str else i for i in boston_calendar.price]
+
+    # add a month, year columns for seasonality analysis
+    boston_calendar = add_seasonality_features(df=boston_calendar)
+
     return boston_listings, boston_calendar, boston_reviews
     
 
