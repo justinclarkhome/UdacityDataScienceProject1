@@ -12,8 +12,13 @@ import plotly.io as pio
 
 day_map = {0: 'Mon', 1: 'Tues', 2: 'Wed', 3: 'Thurs', 4: 'Fri', 5: 'Sat', 6: 'Sun'}
 
-def add_seasonality_features(df, date_col='date', day_map={0: 'Mon', 1: 'Tues', 2: 'Wed', 3: 'Thurs', 4: 'Fri', 5: 'Sat', 6: 'Sun'}):
-    """ Add categorical seasonality info """
+def add_seasonality_features(df, date_col='date'):
+    """ Add categorical seasonality info.
+
+    Loop over the date field and add additional columns reflecting the weekday, month and year of each observation.
+    Return the modified dataframe with the new fields. If the date_col label is not present in df, no processing will occur
+    and the df will be returned unchanged.
+    """
     if date_col not in df:
         print(f'date_col label ({date_col}) not found in df! Not processing seasonality info.')
     else:
@@ -36,7 +41,7 @@ def generate_choropleth(
     """ Generates chorpleth plot of neighborhoods with listing details overlaid.
 
     Thank you for the geojson data: https://github.com/codeforgermany/click_that_hood/blob/main/public/data/boston.geojson?short_path=46589b4
-    
+    If output_filename is included, a static version of the plot will be saved to that filename.
     """
     with open(geojson_file, 'r') as f:
         geojson = json.load(f)
@@ -82,37 +87,44 @@ def generate_choropleth(
 
 
 def load_and_process_raw_data():
-    """ Load underlying Airbnb Boston data"""
-    boston_listings = pd.read_csv('./data/airbnb_boston/listings.csv', index_col='id')
-    boston_calendar = pd.read_csv('./data/airbnb_boston/calendar.csv')
-    boston_reviews = pd.read_csv('./data/airbnb_boston/reviews.csv')
+    """ Load underlying Airbnb Boston data and apply some processing steps.
+    
+    The function will attempt to convert string values that look like prices (e.g. "$5,000") to a float, where possible.
+    Weekly and monthly prices, where missing, will be estiamted via OLS regression based on the price field.
+    Missing zipcodes will be estimated via KNN classified using latitude and longitude values.
 
-    boston_listings = boston_listings.map(
+    The function will returb three cleaned dataframes: listings, calendar and reviews.
+    """
+    listings = pd.read_csv('./data/airbnb_boston/listings.csv', index_col='id')
+    calendar = pd.read_csv('./data/airbnb_boston/calendar.csv')
+    reviews = pd.read_csv('./data/airbnb_boston/reviews.csv')
+
+    listings = listings.map(
         convert_dollars_to_float).map(convert_percentages_to_float).map(convert_string_date_to_dt)
-    boston_calendar = boston_calendar.apply(
+    calendar = calendar.apply(
         convert_dollars_to_float).map(convert_percentages_to_float).map(convert_string_date_to_dt)
-    boston_reviews = boston_reviews.apply(
+    reviews = reviews.apply(
         convert_dollars_to_float).map(convert_percentages_to_float).map(convert_string_date_to_dt)
     
     # estimate missing monthly_price/weekly_price fields using regression (based on price field)
-    boston_listings = estimate_y_from_X_ols(
-        data=boston_listings, y_label='monthly_price', X_labels='price')['filled_data']
-    boston_listings = estimate_y_from_X_ols(
-        data=boston_listings, y_label='weekly_price', X_labels='price')['filled_data']
+    listings = estimate_y_from_X_ols(
+        data=listings, y_label='monthly_price', X_labels='price')['filled_data']
+    listings = estimate_y_from_X_ols(
+        data=listings, y_label='weekly_price', X_labels='price')['filled_data']
     
     # estimate missing zip codes using KNN classification (based on latitude and longitude)
-    boston_listings = classify_y_based_on_X_knn(
-        data=get_cleaned_zipcodes(boston_listings), 
+    listings = classify_y_based_on_X_knn(
+        data=get_cleaned_zipcodes(listings), 
         y_label='zipcode_cleaned', X_labels=['latitude', 'longitude'],
     )['filled_data']    
 
     # convert price column to a float, assuming format of $#.#
-    boston_calendar.price = [float(i.replace('$', '').replace(',', '')) if type(i) is str else i for i in boston_calendar.price]
+    calendar.price = [float(i.replace('$', '').replace(',', '')) if type(i) is str else i for i in calendar.price]
 
     # add a month, year columns for seasonality analysis
-    boston_calendar = add_seasonality_features(df=boston_calendar)
+    calendar = add_seasonality_features(df=calendar)
 
-    return boston_listings, boston_calendar, boston_reviews
+    return listings, calendar, reviews
     
 
 def get_columns_and_types(df):
@@ -128,9 +140,7 @@ def get_columns_and_types(df):
 
 
 def convert_dollars_to_float(s, pattern=r"\$|,"):
-    """
-    Convert money-like strings to floats.
-    """
+    """ Convert money-like strings to floats."""
     if type(s) is str and re.match(pattern, s):
         # if the input is a str containing '$' and/or ',' try to remove those chars and covert the result to a float
         # if this fails, then there is likely text mixed in (like "$195 this week only!")
