@@ -1,12 +1,111 @@
 import pandas as pd
 import numpy as np
 import re
+import json
 from datetime import datetime as dt
 import statsmodels.api as sm
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score
 from sklearn.neighbors import KNeighborsClassifier
+import plotly.express as px
+import plotly.io as pio
 
+
+def add_seasonality_features(df, date_col='date', day_map={0: 'Mon', 1: 'Tues', 2: 'Wed', 3: 'Thurs', 4: 'Fri', 5: 'Sat', 6: 'Sun'}):
+    """ Add categorical seasonality info """
+    if date_col not in df:
+        print(f'date_col label ({date_col}) not found in df! Not processing seasonality info.')
+    else:
+        df[date_col] = [pd.Timestamp(i) if type(i) is str else i for i in df[date_col]]
+        if 'weekday' not in df:
+            df['weekday'] = [i.weekday() for i in df[date_col]]
+        if 'month' not in df:
+            df['month'] = [i.month for i in df[date_col]]
+        if 'year' not in df:
+            df['year'] = [i.year for i in df[date_col]]
+    return df
+
+
+def generate_choropleth(
+    df,
+    geojson_file='./data/airbnb_boston/boston.geojson',
+    output_filename='prices_and_neighborhoods.png',
+    use_log_price=True,
+):
+    """ Generates chorpleth plot of neighborhoods with listing details overlaid.
+
+    Thank you for the geojson data: https://github.com/codeforgermany/click_that_hood/blob/main/public/data/boston.geojson?short_path=46589b4
+    
+    """
+    with open(geojson_file, 'r') as f:
+        geojson = json.load(f)
+        
+    geoplot_data = df[['latitude', 'longitude', 'zipcode_cleaned', 'price']].dropna()
+    geoplot_data['log_price'] = geoplot_data['price'].apply(np.log)
+    
+    fig = px.choropleth(
+        data_frame={'name': [i['properties']['name'] for i in geojson['features']]}, 
+        geojson=geojson, 
+        locations='name', 
+        featureidkey="properties.name",
+        title='Boston Neighborhoods and Airbnb Prices<br>Colorbar is Log Scale',
+    )
+    fig.update_geos(fitbounds="locations", visible=False) 
+    fig.add_trace(
+        px.scatter_geo(
+            data_frame=geoplot_data, 
+            lat='latitude', 
+            lon='longitude', 
+            color='log_price',
+            hover_data={
+                'latitude': ':.2f', 
+                'longitude': ':.2f', 
+                'price': ':.2f', 
+                'log_price': ':.2f',
+            },
+        ).data[0])
+    
+    # relabel the colorbar (as showing log values is confusing)
+    fig.update_coloraxes(colorbar={
+        'title': 'Price',
+        'tickvals': geoplot_data['log_price'].quantile([0.01, 0.999]).values,
+        'ticktext': ['Cheaper', 'Pricier'],
+    })
+    fig.update_layout(showlegend=False)
+    
+    fig.show()
+
+    if output_filename is not None:
+        print(f'Writing {output_filename}')
+        pio.write_image(fig, output_filename) 
+
+
+def load_and_process_raw_data():
+    """ Load underlying Airbnb Boston data"""
+    boston_listings = pd.read_csv('./data/airbnb_boston/listings.csv', index_col='id')
+    boston_calendar = pd.read_csv('./data/airbnb_boston/calendar.csv')
+    boston_reviews = pd.read_csv('./data/airbnb_boston/reviews.csv')
+
+    boston_listings = boston_listings.map(
+        convert_dollars_to_float).map(convert_percentages_to_float).map(convert_string_date_to_dt)
+    boston_calendar = boston_calendar.apply(
+        convert_dollars_to_float).map(convert_percentages_to_float).map(convert_string_date_to_dt)
+    boston_reviews = boston_reviews.apply(
+        convert_dollars_to_float).map(convert_percentages_to_float).map(convert_string_date_to_dt)
+    
+    # estimate missing monthly_price/weekly_price fields using regression (based on price field)
+    boston_listings = estimate_y_from_X_ols(
+        data=boston_listings, y_label='monthly_price', X_labels='price')['filled_data']
+    boston_listings = estimate_y_from_X_ols(
+        data=boston_listings, y_label='weekly_price', X_labels='price')['filled_data']
+    
+    # estimate missing zip codes using KNN classification (based on latitude and longitude)
+    boston_listings = classify_y_based_on_X_knn(
+        data=get_cleaned_zipcodes(boston_listings), 
+        y_label='zipcode_cleaned', X_labels=['latitude', 'longitude'],
+    )['filled_data']    
+    return boston_listings, boston_calendar, boston_reviews
+    
 
 def get_columns_and_types(df):
     """
