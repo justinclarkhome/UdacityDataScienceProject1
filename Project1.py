@@ -12,12 +12,16 @@ import plotly.io as pio
 
 day_map = {0: 'Mon', 1: 'Tues', 2: 'Wed', 3: 'Thurs', 4: 'Fri', 5: 'Sat', 6: 'Sun'}
 
-def add_seasonality_features(df, date_col='date'):
-    """ Add categorical seasonality info.
 
-    Loop over the date field and add additional columns reflecting the weekday, month and year of each observation.
-    Return the modified dataframe with the new fields. If the date_col label is not present in df, no processing will occur
-    and the df will be returned unchanged.
+def add_seasonality_features(df, date_col='date'):
+    """Add seasonality fields (weekday, month, year) to df.
+
+    Args:
+        df (DataFrame): Source data to update. Must contain a column matching date_col.
+        date_col (str, optional): Column in df containin a datetime object, to extract seasonalist info. Defaults to 'date'.
+
+    Returns:
+        DataFrame: DataFrame with seasonal fields included.
     """
     if date_col not in df:
         print(f'date_col label ({date_col}) not found in df! Not processing seasonality info.')
@@ -38,16 +42,22 @@ def generate_choropleth(
     output_filename='prices_and_neighborhoods.png',
     use_log_price=True,
 ):
-    """ Generates chorpleth plot of neighborhoods with listing details overlaid.
+    """Generate a chorpleth plot of neighborhoods with listing details overlaid.
 
     Thank you for the geojson data: https://github.com/codeforgermany/click_that_hood/blob/main/public/data/boston.geojson?short_path=46589b4
-    If output_filename is included, a static version of the plot will be saved to that filename.
+
+    Args:
+        df (DataFrame): Souce data containing latitude, longitude, zipcode_cleaned, and price columns.
+        geojson_file (str, optional): GeoJSON data to define neighborhood borders. Defaults to './data/airbnb_boston/boston.geojson'.
+        output_filename (str, optional): If included, the output figure will be saved as a static image to this file. Defaults to 'prices_and_neighborhoods.png'.
+        use_log_price (bool, optional): Apply log transformation to price to make color scale easier interpet. Defaults to True.
     """
     with open(geojson_file, 'r') as f:
         geojson = json.load(f)
         
     geoplot_data = df[['latitude', 'longitude', 'zipcode_cleaned', 'price']].dropna()
-    geoplot_data['log_price'] = geoplot_data['price'].apply(np.log)
+    if use_log_price:
+        geoplot_data['log_price'] = geoplot_data['price'].apply(np.log)
     
     fig = px.choropleth(
         data_frame={'name': [i['properties']['name'] for i in geojson['features']]}, 
@@ -62,19 +72,23 @@ def generate_choropleth(
             data_frame=geoplot_data, 
             lat='latitude', 
             lon='longitude', 
-            color='log_price',
+            color='log_price' if use_log_price else 'price',
             hover_data={
                 'latitude': ':.2f', 
                 'longitude': ':.2f', 
                 'price': ':.2f', 
                 'log_price': ':.2f',
+            } if use_log_price else {
+                'latitude': ':.2f', 
+                'longitude': ':.2f', 
+                'price': ':.2f', 
             },
         ).data[0])
     
     # relabel the colorbar (as showing log values is confusing)
     fig.update_coloraxes(colorbar={
         'title': 'Price',
-        'tickvals': geoplot_data['log_price'].quantile([0.01, 0.999]).values,
+        'tickvals': geoplot_data['log_price' if use_log_price else 'price'].quantile([0.01, 0.999]).values,
         'ticktext': ['Cheaper', 'Pricier'],
     })
     fig.update_layout(showlegend=False)
@@ -87,13 +101,14 @@ def generate_choropleth(
 
 
 def load_and_process_raw_data():
-    """ Load underlying Airbnb Boston data and apply some processing steps.
-    
+    """Load underlying Airbnb Boston data and apply some processing steps.
+
     The function will attempt to convert string values that look like prices (e.g. "$5,000") to a float, where possible.
     Weekly and monthly prices, where missing, will be estiamted via OLS regression based on the price field.
     Missing zipcodes will be estimated via KNN classified using latitude and longitude values.
 
-    The function will returb three cleaned dataframes: listings, calendar and reviews.
+    Returns:
+        Three DataFrames: DataFrames containing info for listings, calendar, reviews.
     """
     listings = pd.read_csv('./data/airbnb_boston/listings.csv', index_col='id')
     calendar = pd.read_csv('./data/airbnb_boston/calendar.csv')
@@ -128,8 +143,13 @@ def load_and_process_raw_data():
     
 
 def get_columns_and_types(df):
-    """
-    Loop over the dtypes of the columns of a dataframe, and return a dictionary of lists identifying which are ints, floats and objects.
+    """Inspect a dtypes of each column in DataFrame and return a dictionary of lists identifying which are ints, floats and objects.
+
+    Args:
+        df (DataFrame): Source DataFrame to inspect.
+
+    Returns:
+        dict: Dictionary containing lists of int, float and object columns in df.
     """
     print(f'Types detected: {", ".join([str(i) for i in df.dtypes.unique()])}')
     return {
@@ -140,7 +160,15 @@ def get_columns_and_types(df):
 
 
 def convert_dollars_to_float(s, pattern=r"\$|,"):
-    """ Convert money-like strings to floats."""
+    """Convert money-like strings to floats.
+
+    Args:
+        s (str): String to try to parse.
+        pattern (regexp, optional): Regular expressiont to use to evaluate s. Defaults to r"$|,".
+
+    Returns:
+        float or str: Returns a float representing a dollar amount if the regex succeeds, otherwise return the original string.
+    """
     if type(s) is str and re.match(pattern, s):
         # if the input is a str containing '$' and/or ',' try to remove those chars and covert the result to a float
         # if this fails, then there is likely text mixed in (like "$195 this week only!")
@@ -154,10 +182,19 @@ def convert_dollars_to_float(s, pattern=r"\$|,"):
 
 
 def estimate_y_from_X_ols(data, y_label, X_labels, train_size=0.6, random_state=42, add_constant=False):
-    """
-    Run a linear regression on data using y_label as the dependent variable and X_labels as the independent variable(s): y_label ~ X_labels
-    A constant can be optionally added, but note that the r2 test may give misleading results when a constant is included.
-    """
+    """Run a linear regression on data, using tje form: y_label ~ X_labels.
+
+    Args:
+        data (DataFrame): Source data.
+        y_label (str): Column in data to use as the dependent variable.
+        X_labels (list of str): Column(s) in data to use as the independent variable(s).
+        train_size (float, optional): Percentage of data to use for training. Defaults to 0.6.
+        random_state (int, optional): Allow for reproducible train/test output. Defaults to 42.
+        add_constant (bool, optional): Whether to include a constant to the X variables. Defaults to False.
+
+    Returns:
+        dict: Dictionary containing filled_data used by the regression, the fit model, X_train DataFrame, X_test DataFrame, y_train DataFrame, y_test DataFrame.
+    """    
     if type(X_labels) not in [list, tuple]:
         X_labels = [X_labels] # in case we pass a scalar
         
@@ -194,9 +231,14 @@ def estimate_y_from_X_ols(data, y_label, X_labels, train_size=0.6, random_state=
 
 
 def convert_percentages_to_float(s):
-    """
-    Take in a value, and if it is a string ending with a percent side, strip the percent sign and return a float. 
-    If the conversion fails, return the original value.
+    """Take in a value, and if it is a string ending with a percent sign, strip the percent sign and return a float. 
+    If the conversion fails - or if s is not a string - return the original value.
+
+    Args:
+        s (any): Input to evaluate.
+
+    Returns:
+        str or original value of s: If conversion fails - or s is not a string - return the original input, otherwise return the converted input as a string.
     """
     if type(s) is str and s.endswith('%'):
         try:
@@ -208,26 +250,36 @@ def convert_percentages_to_float(s):
 
 
 def convert_string_date_to_dt(s):
-    """
-    Take in a value, and if it is a string that looks like a date in YYYY-MM-DD format, convert it to a datetime object.
+    """Take in a value, and if it is a string that looks like a date in YYYY-MM-DD format, convert it to a datetime object.
     If the conversion fails, return the original value.
+
+    Args:
+        s (any): Input to evaluate.
+
+    Returns:
+        datetime or original value of s: If the conversion fails return the original unput, otherwise return the input concverted to a datetime object.
     """
     try:
         return dt.strptime(s, '%Y-%m-%d')
     except:
         return s
-
         
+
 def get_cleaned_zipcodes(data):
-    """
-    Scan over the values of 'zipcodes' in the data, and isolate those that are 5 characters long, with other values
+    """Scan over the values of 'zipcodes' in the data, and isolate those that are 5 characters long, with other values
     return as NaN. This dataset is pretty clean with zips, but there's at least 1 entry where the zip is more than 10 digits.
     Store the cleaned values as 'zipcode_cleaned'. Note that if the 'zipcode_cleaned' field is aready in data, it will be dropped 
     and recalculated.
 
     The 'zipcode_cleaned' field - including the nans - will be used later to feed into a classifier (to get estimates for the nans 
     based on latitude and longitude).
-    """
+
+    Args:
+        data (DataFrame): Source data containing zipclode column.
+
+    Returns:
+        DataFrame: The original data with zipcode_cleaned as an additional column.
+    """    
     if 'zipcode_cleaned' in data:
         data = data.drop('zipcode_cleaned', axis=1)
 
@@ -245,11 +297,19 @@ def get_cleaned_zipcodes(data):
     
 
 def classify_y_based_on_X_knn(data, y_label, X_labels, train_size=0.6, random_state=42):
-    """
-    Wrapped for a K nearest neighbor classifier, that will estimate categories contained in y_label column of data, 
+    """ Wrapper for a K nearest neighbor classifier, that will estimate categories contained in the y_label column of data, 
     using the variables contained in X labels columns of data.
-    """
 
+    Args:
+        data (DataFrame): Source data containing y_label and X_labels.
+        y_label (str): The column to use as the categories (response).
+        X_labels (list of str): The column(s) to use as feature(s).
+        train_size (float, optional): Percentage of data to use for training. Defaults to 0.6.
+        random_state (int, optional): Allow for reproducible train/test output. Defaults to 42.
+
+    Returns:
+        dict: Dictionary containing filled_data used by the regression, the fit model, X_train DataFrame, X_test DataFrame, y_train DataFrame, y_test DataFrame.
+    """
     if type(X_labels) is str:
         X_labels = [X_labels]
     

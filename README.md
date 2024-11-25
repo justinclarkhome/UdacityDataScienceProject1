@@ -12,4 +12,4 @@ Link to blog:
 
 Ackowledgements:
 - The source dataset is Airbnb Boston listing data from [Kaggle](https://www.kaggle.com/datasets/airbnb/boston?resource=download).
-- The author worked alone on this code, but is very thankful to @codeforgermany here on Github for the [Boston geojson data](https://github.com/codeforgermany/click_that_hood/blob/main/public/data/boston.geojson?short_path=46589b4)!
+- The author worked alone on this code, but is very thankful to @codeforgermany for the [Boston geojson data](https://github.com/codeforgermany/click_that_hood/blob/main/public/data/boston.geojson?short_path=46589b4) and to @NilsJPWerner for the [autoDocstring tool](https://github.com/NilsJPWerner/autoDocstring).
